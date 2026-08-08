@@ -15,16 +15,21 @@ describe("otelTelemetry", () => {
   });
 
   it("stays off for any value that is not an explicit opt-in", () => {
-    for (const value of ["0", "false", "", "yes", "on"]) {
+    for (const value of ["0", "false", "", "yes", "on", "METRICS"]) {
       process.env.VENDO_OTEL_TRACING = value;
       expect(otelTelemetry("vendo.agent.turn")).toEqual({});
     }
   });
 
-  it("emits ai-SDK telemetry settings named for the lane when opted in", () => {
+  it("emits settings named for the lane, with payloads, on =1", () => {
     process.env.VENDO_OTEL_TRACING = "1";
     expect(otelTelemetry("vendo.apps.generate")).toEqual({
-      experimental_telemetry: { isEnabled: true, functionId: "vendo.apps.generate" },
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "vendo.apps.generate",
+        recordInputs: true,
+        recordOutputs: true,
+      },
     });
   });
 
@@ -33,15 +38,32 @@ describe("otelTelemetry", () => {
     expect(otelTelemetry("vendo.agent.turn")).toHaveProperty("experimental_telemetry.isEnabled", true);
   });
 
-  it("carries host metadata through when given, and omits the key when not", () => {
-    process.env.VENDO_OTEL_TRACING = "1";
-    expect(otelTelemetry("vendo.agent.turn", { tenant: "acme" })).toEqual({
+  it("=metrics traces WITHOUT shipping prompts or tool results", () => {
+    process.env.VENDO_OTEL_TRACING = "metrics";
+    expect(otelTelemetry("vendo.agent.turn")).toEqual({
       experimental_telemetry: {
         isEnabled: true,
         functionId: "vendo.agent.turn",
-        metadata: { tenant: "acme" },
+        recordInputs: false,
+        recordOutputs: false,
       },
     });
+  });
+
+  it("lets an explicit option override the env in either direction", () => {
+    process.env.VENDO_OTEL_TRACING = "metrics";
+    expect(otelTelemetry("vendo.agent.turn", { recordInputs: true }))
+      .toHaveProperty("experimental_telemetry.recordInputs", true);
+
+    process.env.VENDO_OTEL_TRACING = "1";
+    expect(otelTelemetry("vendo.agent.turn", { recordOutputs: false }))
+      .toHaveProperty("experimental_telemetry.recordOutputs", false);
+  });
+
+  it("carries host metadata through when given, and omits the key when not", () => {
+    process.env.VENDO_OTEL_TRACING = "1";
+    expect(otelTelemetry("vendo.agent.turn", { metadata: { tenant: "acme" } }))
+      .toHaveProperty("experimental_telemetry.metadata", { tenant: "acme" });
     expect(otelTelemetry("vendo.agent.turn").experimental_telemetry).not.toHaveProperty("metadata");
   });
 
